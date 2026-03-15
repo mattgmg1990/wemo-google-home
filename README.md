@@ -193,6 +193,9 @@ Official docs:
 5. Add the Google-issued OAuth values.
 6. Redeploy.
 
+The public OAuth and fulfillment endpoints intentionally refuse requests until the required
+environment variables are present and valid.
+
 ### Environment Variables
 
 Copy [`.env.example`](./.env.example) to `.env.local` for local development, and add the same values in Vercel for production.
@@ -333,6 +336,9 @@ Helpful references:
 7. Accept the Google account-linking prompt.
 8. Wait for Google Home to run device sync.
 9. Assign the devices to homes and rooms if prompted.
+
+The sign-in endpoint rate limits repeated failed password attempts, so if you make several
+mistakes in a row you may need to wait a few minutes before trying again.
 
 If the integration does not appear in the Google Home app, the first thing to check is that the phone app and the Google Home Developer Console are using the same Google account.
 

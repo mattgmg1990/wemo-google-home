@@ -201,14 +201,6 @@ function refreshDeviceStatesInBackground() {
   void getLocalDevices()
     .then((devices) => {
       rememberStatesFromLocalDevices(devices, deviceCatalog());
-      console.info("[fulfillment] background refresh updated states", {
-        devices: devices.map((device) => ({
-          id: device.id,
-          name: device.name,
-          online: device.online ?? true,
-          state: device.state,
-        })),
-      });
     })
     .catch((error) => {
       console.warn("[fulfillment] background refresh failed", {
@@ -258,10 +250,6 @@ export async function queryPayload(request: IntentRequest) {
   const responseDeviceIds = fallbackDeviceIds(requestedQueryDeviceIds(request), catalog);
 
   if (!missingKnownState(responseDeviceIds)) {
-    console.info("[fulfillment] query served from last-known states", {
-      requestId,
-      responseDeviceIds,
-    });
     refreshDeviceStatesInBackground();
 
     return {
@@ -275,16 +263,6 @@ export async function queryPayload(request: IntentRequest) {
   try {
     const devices = await getLocalDevices();
     rememberStatesFromLocalDevices(devices, catalog);
-    console.info("[fulfillment] query result", {
-      devices: devices.map((device) => ({
-        id: device.id,
-        name: device.name,
-        online: device.online ?? true,
-        state: device.state,
-      })),
-      requestId,
-      responseDeviceIds,
-    });
 
     return {
       requestId,
@@ -294,10 +272,9 @@ export async function queryPayload(request: IntentRequest) {
     };
   } catch (error) {
     console.error("[fulfillment] query failed", {
+      deviceCount: responseDeviceIds.length,
       error: error instanceof Error ? error.message : "unknown error",
       requestId,
-      responseDeviceIds,
-      fallbackStates: deviceStatePayload(responseDeviceIds),
     });
 
     return {
@@ -312,25 +289,11 @@ export async function queryPayload(request: IntentRequest) {
 export async function executePayload(request: IntentRequest) {
   const catalog = deviceCatalog();
   const requestId = request.requestId ?? "";
-  const commands = request.inputs?.[0]?.payload?.commands ?? [];
   const responseDeviceIds = fallbackDeviceIds(requestedExecutionDeviceIds(request), catalog);
   const desiredState = requestedOnState(request);
   const targetDevices = responseDeviceIds
     .map((deviceId) => catalog.deviceById.get(deviceId))
     .filter((device): device is BridgeDevice => device != null);
-
-  console.info("[fulfillment] execute request", {
-    desiredState,
-    requestId,
-    commands: commands.map((command) => ({
-      deviceIds: command.devices?.map((device) => device.id ?? "<missing-id>") ?? [],
-      executions: executionsForCommand(command).map((execution) => ({
-        command: execution.command ?? "<missing-command>",
-        on: execution.params?.on,
-      })),
-    })),
-    responseDeviceIds,
-  });
 
   if (desiredState === null) {
     console.warn("[fulfillment] execute rejected: unsupported command", { requestId });
@@ -350,8 +313,8 @@ export async function executePayload(request: IntentRequest) {
 
   if (targetDevices.length !== responseDeviceIds.length) {
     console.warn("[fulfillment] execute rejected: unknown device id", {
+      deviceCount: responseDeviceIds.length,
       requestId,
-      responseDeviceIds,
     });
     return {
       requestId,
@@ -372,17 +335,6 @@ export async function executePayload(request: IntentRequest) {
       targetDevices.map((device) => setLocalDevice(device.localId, desiredState ? "on" : "off")),
     );
     rememberStatesFromLocalDevices(updatedDevices, catalog);
-    console.info("[fulfillment] execute result", {
-      desiredState,
-      devices: updatedDevices.map((device) => ({
-        id: device.id,
-        name: device.name,
-        online: device.online ?? true,
-        state: device.state,
-      })),
-      requestId,
-      responseDeviceIds,
-    });
 
     return {
       requestId,
@@ -405,10 +357,10 @@ export async function executePayload(request: IntentRequest) {
     }
 
     console.error("[fulfillment] execute failed", {
+      deviceCount: responseDeviceIds.length,
       desiredState,
       error: error instanceof Error ? error.message : "unknown error",
       requestId,
-      responseDeviceIds,
     });
 
     return {

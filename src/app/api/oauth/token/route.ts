@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { googleClientId, googleClientSecret } from "@/lib/env";
+import { NextRequest } from "next/server";
+import { configuredEnvIssues, googleClientId, googleClientSecret, OAUTH_REQUIRED_ENV } from "@/lib/env";
+import { noStoreJson } from "@/lib/response-utils";
 import { issueToken, verifyToken } from "@/lib/tokens";
 
 export const runtime = "nodejs";
@@ -14,7 +15,7 @@ type TokenRequest = {
 };
 
 function jsonError(error: string, status: number) {
-  return NextResponse.json({ error }, { status });
+  return noStoreJson({ error }, { status });
 }
 
 async function parseTokenRequest(request: NextRequest): Promise<TokenRequest> {
@@ -42,6 +43,10 @@ async function parseTokenRequest(request: NextRequest): Promise<TokenRequest> {
 }
 
 export async function POST(request: NextRequest) {
+  if (configuredEnvIssues(OAUTH_REQUIRED_ENV).length > 0) {
+    return noStoreJson({ error: "service_unavailable" }, { status: 503 });
+  }
+
   const payload = await parseTokenRequest(request);
 
   if (googleClientId() && payload.client_id !== googleClientId()) {
@@ -58,7 +63,7 @@ export async function POST(request: NextRequest) {
       return jsonError("invalid_grant", 400);
     }
 
-    return NextResponse.json({
+    return noStoreJson({
       access_token: issueToken("access_token", code.sub, 3600),
       expires_in: 3600,
       refresh_token: issueToken("refresh_token", code.sub, 60 * 60 * 24 * 180),
@@ -72,7 +77,7 @@ export async function POST(request: NextRequest) {
       return jsonError("invalid_grant", 400);
     }
 
-    return NextResponse.json({
+    return noStoreJson({
       access_token: issueToken("access_token", refreshToken.sub, 3600),
       expires_in: 3600,
       token_type: "Bearer",

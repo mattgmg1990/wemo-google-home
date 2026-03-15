@@ -1,5 +1,5 @@
 import styles from "./page.module.css";
-import { appLoginUsername, googleClientId, googleRedirectUri } from "@/lib/env";
+import { configuredEnvIssues, googleClientId, googleRedirectUri, OAUTH_REQUIRED_ENV } from "@/lib/env";
 
 type SearchValue = string | string[] | undefined;
 
@@ -23,15 +23,28 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
   const state = readParam(params.state);
   const scope = readParam(params.scope);
   const error = readParam(params.error);
+  const configurationReady = configuredEnvIssues(OAUTH_REQUIRED_ENV).length === 0;
 
   const validationError =
-    responseType !== "code"
+    !configurationReady
+      ? "Bridge configuration is incomplete. Finish the required environment variables before linking Google Home."
+      : responseType !== "code"
       ? "Google must request an authorization code."
       : mismatchesConfiguredValue(clientId, googleClientId())
         ? "This client_id does not match GOOGLE_OAUTH_CLIENT_ID."
         : mismatchesConfiguredValue(redirectUri, googleRedirectUri())
           ? "This redirect_uri does not match GOOGLE_REDIRECT_URI."
           : "";
+
+  const errorMessage =
+    validationError ||
+    (error === "invalid_login"
+      ? "Sign-in failed. Check your username and password."
+      : error === "rate_limited"
+        ? "Too many sign-in attempts. Wait a few minutes and try again."
+        : error === "bridge_not_configured"
+          ? "Bridge configuration is incomplete. Finish the required environment variables before linking Google Home."
+          : "");
 
   return (
     <main className={styles.page}>
@@ -46,10 +59,7 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
           By signing in, you are authorizing Google to control your configured devices.
         </p>
 
-        {validationError ? <p className={styles.error}>{validationError}</p> : null}
-        {!validationError && error ? (
-          <p className={styles.error}>Sign-in failed. Check your username and password.</p>
-        ) : null}
+        {errorMessage ? <p className={styles.error}>{errorMessage}</p> : null}
 
         <form className={styles.form} action="/oauth/authorize/complete" method="post">
           <input type="hidden" name="client_id" value={clientId} />
@@ -60,34 +70,23 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
 
           <label className={styles.field}>
             <span>Username</span>
-            <input
-              autoComplete="username"
-              defaultValue={appLoginUsername()}
-              name="username"
-              type="text"
-            />
+            <input autoComplete="username" disabled={Boolean(validationError)} name="username" type="text" />
           </label>
 
           <label className={styles.field}>
             <span>Password</span>
-            <input autoComplete="current-password" name="password" type="password" />
+            <input
+              autoComplete="current-password"
+              disabled={Boolean(validationError)}
+              name="password"
+              type="password"
+            />
           </label>
 
           <button className={styles.button} disabled={Boolean(validationError)} type="submit">
             Link Google Home
           </button>
         </form>
-
-        <div className={styles.meta}>
-          <div>
-            <strong>client_id</strong>
-            <span>{clientId || "Missing"}</span>
-          </div>
-          <div>
-            <strong>redirect_uri</strong>
-            <span>{redirectUri || "Missing"}</span>
-          </div>
-        </div>
       </section>
     </main>
   );

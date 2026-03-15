@@ -14,8 +14,34 @@ const OPTIONAL_ENV = [
   "DEVICE_CONFIG_JSON",
 ] as const;
 
-type EnvKey = (typeof OPTIONAL_ENV)[number];
+const LOCAL_HOSTNAMES = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
+
+export const OAUTH_REQUIRED_ENV = [
+  "APP_SECRET",
+  "APP_LOGIN_USERNAME",
+  "APP_LOGIN_PASSWORD",
+  "GOOGLE_OAUTH_CLIENT_ID",
+  "GOOGLE_OAUTH_CLIENT_SECRET",
+  "GOOGLE_REDIRECT_URI",
+] as const satisfies readonly (typeof OPTIONAL_ENV)[number][];
+
+export const FULFILLMENT_REQUIRED_ENV = [
+  "APP_SECRET",
+  "GOOGLE_OAUTH_CLIENT_ID",
+  "GOOGLE_OAUTH_CLIENT_SECRET",
+  "GOOGLE_REDIRECT_URI",
+  "GOOGLE_AGENT_USER_ID",
+  "DEVICE_API_URL",
+  "DEVICE_API_TOKEN",
+  "DEVICE_CONFIG_JSON",
+] as const satisfies readonly (typeof OPTIONAL_ENV)[number][];
+
+export type EnvKey = (typeof OPTIONAL_ENV)[number];
 type EnvStatus = "configured" | "invalid" | "missing" | "pending_google";
+export type EnvIssue = {
+  error: string;
+  name: EnvKey;
+};
 
 const GOOGLE_MANAGED_ENV = new Set<EnvKey>([
   "GOOGLE_OAUTH_CLIENT_ID",
@@ -28,17 +54,87 @@ function readEnv(name: EnvKey): string | undefined {
   return value ? value : undefined;
 }
 
-function validateEnv(name: EnvKey, value: string): string | undefined {
-  if (name !== "DEVICE_CONFIG_JSON") {
+function validateUrlEnv(
+  name: EnvKey,
+  value: string,
+  {
+    allowLocalHttp = false,
+  }: {
+    allowLocalHttp?: boolean;
+  } = {},
+): string | undefined {
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    return `${name} must be a valid URL.`;
+  }
+
+  if (url.protocol === "https:") {
     return undefined;
   }
 
-  try {
-    parseDeviceConfigJson(value);
+  if (allowLocalHttp && url.protocol === "http:" && LOCAL_HOSTNAMES.has(url.hostname)) {
     return undefined;
-  } catch (error) {
-    return error instanceof Error ? error.message : "Invalid DEVICE_CONFIG_JSON.";
   }
+
+  return allowLocalHttp
+    ? `${name} must use HTTPS, or http://localhost during local development.`
+    : `${name} must use HTTPS.`;
+}
+
+function validateEnv(name: EnvKey, value: string): string | undefined {
+  if (name === "DEVICE_CONFIG_JSON") {
+    try {
+      parseDeviceConfigJson(value);
+      return undefined;
+    } catch (error) {
+      return error instanceof Error ? error.message : "Invalid DEVICE_CONFIG_JSON.";
+    }
+  }
+
+  if (name === "APP_URL" || name === "GOOGLE_REDIRECT_URI") {
+    return validateUrlEnv(name, value, { allowLocalHttp: true });
+  }
+
+  if (name === "DEVICE_API_URL") {
+    return validateUrlEnv(name, value, {
+      allowLocalHttp: process.env.NODE_ENV !== "production",
+    });
+  }
+
+  return undefined;
+}
+
+export function configuredEnvIssues(names: readonly EnvKey[] = OPTIONAL_ENV): EnvIssue[] {
+  return names.flatMap((name) => {
+    const value = readEnv(name);
+    if (!value) {
+      return [
+        {
+          error: `${name} is not configured.`,
+          name,
+        },
+      ];
+    }
+
+    const validationError = validateEnv(name, value);
+    if (!validationError) {
+      return [];
+    }
+
+    return [
+      {
+        error: validationError,
+        name,
+      },
+    ];
+  });
+}
+
+export function isConfigured(names: readonly EnvKey[]): boolean {
+  return configuredEnvIssues(names).length === 0;
 }
 
 export function appUrl(): string {
@@ -58,11 +154,11 @@ export function googleRedirectUri(): string | undefined {
 }
 
 export function googleAgentUserId(): string {
-  return readEnv("GOOGLE_AGENT_USER_ID") ?? "self-hosted-bridge-user";
+  return requiredEnv("GOOGLE_AGENT_USER_ID");
 }
 
 export function appLoginUsername(): string {
-  return readEnv("APP_LOGIN_USERNAME") ?? "bridge-admin";
+  return requiredEnv("APP_LOGIN_USERNAME");
 }
 
 export function appLoginPassword(): string {

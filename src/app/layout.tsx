@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "WeMo Google Home Bridge",
   description: "A self-hosted Google Smart Home bridge for legacy WeMo devices.",
+  robots: {
+    follow: false,
+    index: false,
+  },
 };
 
 export default function RootLayout({

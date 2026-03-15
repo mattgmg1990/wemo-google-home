@@ -53,7 +53,6 @@ async function callDeviceApi({
   action: "off" | "on" | "status";
   deviceId?: string;
 }): Promise<LocalApiResponse> {
-  const startedAt = Date.now();
   const response = await fetch(deviceApiUrl(), {
     method: "POST",
     headers: {
@@ -65,6 +64,7 @@ async function callDeviceApi({
       ...(deviceId ? { deviceId } : {}),
     }),
     cache: "no-store",
+    redirect: "error",
     signal: AbortSignal.timeout(DEVICE_API_TIMEOUT_MS),
   });
 
@@ -81,28 +81,16 @@ async function callDeviceApi({
     throw new Error(payload.error ?? `Device API failed (${response.status}).`);
   }
 
-  console.info("[device-api] response", {
-    action,
-    deviceCount: Array.isArray(payload.devices) ? payload.devices.length : 0,
-    deviceId: deviceId ?? "__all__",
-    durationMs: Date.now() - startedAt,
-  });
-
   return payload;
 }
 
 export async function getLocalDevices(): Promise<LocalApiDevice[]> {
   const cached = cachedDevices();
   if (cached !== null) {
-    console.info("[device-api] cache hit", {
-      ageRemainingMs: statusCache?.expiresAt ? Math.max(statusCache.expiresAt - Date.now(), 0) : 0,
-      deviceCount: cached.length,
-    });
     return cached;
   }
 
   if (statusInFlight !== null) {
-    console.info("[device-api] status deduped");
     return statusInFlight;
   }
 
@@ -113,7 +101,7 @@ export async function getLocalDevices(): Promise<LocalApiDevice[]> {
     } catch (error) {
       if (statusCache !== null) {
         console.warn("[device-api] status fell back to stale cache", {
-          deviceCount: statusCache.devices.length,
+          cacheAgeMs: Math.max(Date.now() - (statusCache.expiresAt - STATUS_CACHE_TTL_MS), 0),
           error: error instanceof Error ? error.message : "unknown error",
         });
         return statusCache.devices;

@@ -3,10 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   appLoginPassword,
   appLoginUsername,
+  configuredEnvIssues,
   googleAgentUserId,
   googleClientId,
   googleRedirectUri,
+  OAUTH_REQUIRED_ENV,
 } from "@/lib/env";
+import { clearLoginRateLimit, loginRateLimitStatus, recordFailedLoginAttempt } from "@/lib/rate-limit";
+import { noStoreHeaders, noStoreRedirect } from "@/lib/response-utils";
 import { issueToken } from "@/lib/tokens";
 
 export const runtime = "nodejs";
@@ -37,28 +41,57 @@ export async function POST(request: NextRequest) {
   const state = form.get("state")?.toString() ?? "";
   const username = form.get("username")?.toString() ?? "";
   const password = form.get("password")?.toString() ?? "";
+  const oauthIssues = configuredEnvIssues(OAUTH_REQUIRED_ENV);
 
   if (responseType !== "code") {
-    return NextResponse.json({ error: "unsupported_response_type" }, { status: 400 });
+    return NextResponse.json(
+      { error: "unsupported_response_type" },
+      { headers: noStoreHeaders(), status: 400 },
+    );
+  }
+
+  if (oauthIssues.length > 0) {
+    return noStoreRedirect(authorizePageUrl(request, form, "bridge_not_configured"));
   }
 
   if (googleClientId() && clientId !== googleClientId()) {
-    return NextResponse.json({ error: "invalid_client" }, { status: 400 });
+    return NextResponse.json({ error: "invalid_client" }, { headers: noStoreHeaders(), status: 400 });
   }
 
   if (googleRedirectUri() && redirectUri !== googleRedirectUri()) {
-    return NextResponse.json({ error: "invalid_redirect_uri" }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid_redirect_uri" },
+      { headers: noStoreHeaders(), status: 400 },
+    );
   }
 
-  if (!stableCompare(username, appLoginUsername()) || !stableCompare(password, appLoginPassword())) {
-    return NextResponse.redirect(authorizePageUrl(request, form, "invalid_login"), {
-      status: 303,
+  const rateLimit = loginRateLimitStatus(request);
+  if (rateLimit.limited) {
+    return noStoreRedirect(authorizePageUrl(request, form, "rate_limited"), {
+      headers: {
+        "Retry-After": String(rateLimit.retryAfterSeconds),
+      },
     });
   }
 
+  if (!stableCompare(username, appLoginUsername()) || !stableCompare(password, appLoginPassword())) {
+    const nextRateLimit = recordFailedLoginAttempt(request);
+    return noStoreRedirect(
+      authorizePageUrl(request, form, nextRateLimit.limited ? "rate_limited" : "invalid_login"),
+      {
+        headers: nextRateLimit.limited
+          ? {
+              "Retry-After": String(nextRateLimit.retryAfterSeconds),
+            }
+          : undefined,
+      },
+    );
+  }
+
+  clearLoginRateLimit(request);
+
   const code = issueToken("auth_code", googleAgentUserId(), 300, {
     redirectUri,
-    username,
   });
 
   const redirect = new URL(redirectUri);
@@ -67,5 +100,8 @@ export async function POST(request: NextRequest) {
     redirect.searchParams.set("state", state);
   }
 
-  return NextResponse.redirect(redirect, { status: 303 });
+  return NextResponse.redirect(redirect, {
+    headers: noStoreHeaders(),
+    status: 303,
+  });
 }
