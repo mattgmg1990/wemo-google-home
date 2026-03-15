@@ -1,0 +1,114 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.panel {
+  width: min(32rem, 100%);
+  background: rgba(9, 18, 33, 0.86);
+  border: 1px solid rgba(138, 209, 255, 0.18);
+  border-radius: 1.4rem;
+  padding: 1.5rem;
+  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.24);
+}
+
+.eyebrow {
+  color: #8ad1ff;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.75rem;
+  margin-bottom: 0.7rem;
+}
+
+.title {
+  font-size: clamp(1.8rem, 5vw, 2.5rem);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.lede {
+  margin-top: 0.9rem;
+  color: #b8cadb;
+  line-height: 1.65;
+}
+
+.notice {
+  margin-top: 1rem;
+  border-radius: 0.9rem;
+  padding: 0.85rem 1rem;
+  background: rgba(65, 119, 199, 0.18);
+  color: #dcecff;
+  line-height: 1.5;
+}
+
+.error {
+  margin-top: 1rem;
+  border-radius: 0.9rem;
+  padding: 0.85rem 1rem;
+  background: rgba(128, 27, 49, 0.42);
+  color: #ffd7de;
+}
+
+.form {
+  display: grid;
+  gap: 0.95rem;
+  margin-top: 1.2rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.field span {
+  font-size: 0.92rem;
+  color: #b8cadb;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid rgba(180, 213, 241, 0.2);
+  background: rgba(3, 10, 20, 0.8);
+  color: #f8fbff;
+  border-radius: 0.9rem;
+  padding: 0.9rem 1rem;
+  font: inherit;
+}
+
+.button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.95rem 1.2rem;
+  background: linear-gradient(180deg, #41c76a 0%, #25914b 100%);
+  color: #f8fbff;
+  font: inherit;
+  font-weight: 700;
+}
+
+.button:disabled {
+  opacity: 0.45;
+}
+
+.meta {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1.4rem;
+  color: #cdddee;
+}
+
+.meta div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.meta strong {
+  color: #8ad1ff;
+  font-size: 0.82rem;
+}
+
+.meta span {
+  word-break: break-word;
+  font-size: 0.94rem;
+}

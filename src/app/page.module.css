@@ -1,0 +1,169 @@
+.page {
+  width: min(72rem, calc(100vw - 2rem));
+  margin: 0 auto;
+  padding: 3rem 0 4rem;
+}
+
+.hero {
+  padding: 1.5rem 0 2rem;
+}
+
+.eyebrow {
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8ad1ff;
+  margin-bottom: 0.9rem;
+}
+
+.title {
+  font-size: clamp(2rem, 5vw, 4rem);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+  max-width: 12ch;
+}
+
+.lede {
+  margin-top: 1rem;
+  max-width: 42rem;
+  color: #b7c9dc;
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.bannerReady,
+.bannerPending {
+  margin-top: 1.35rem;
+  display: grid;
+  gap: 0.4rem;
+  max-width: 42rem;
+  border-radius: 1.1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(137, 184, 229, 0.16);
+}
+
+.bannerReady {
+  background: rgba(15, 75, 41, 0.35);
+}
+
+.bannerPending {
+  background: rgba(126, 83, 7, 0.3);
+}
+
+.cardGrid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.card {
+  background: rgba(10, 19, 34, 0.78);
+  border: 1px solid rgba(137, 184, 229, 0.16);
+  border-radius: 1.4rem;
+  padding: 1.35rem;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
+}
+
+.cardTitle {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.definitionList {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.definitionList dt {
+  font-size: 0.85rem;
+  color: #8ad1ff;
+  margin-bottom: 0.25rem;
+}
+
+.definitionList dd {
+  color: #f2f7fb;
+  font-size: 0.96rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.checklist {
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.checklist li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  border-radius: 1rem;
+  padding: 0.85rem 0.95rem;
+}
+
+.ready {
+  background: rgba(15, 75, 41, 0.48);
+}
+
+.pending {
+  background: rgba(126, 83, 7, 0.38);
+}
+
+.missing {
+  background: rgba(108, 29, 43, 0.48);
+}
+
+.invalid {
+  background: rgba(122, 53, 8, 0.48);
+}
+
+.cardNote {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.55rem;
+  color: #d6e5f5;
+  line-height: 1.5;
+}
+
+.deviceList {
+  list-style: none;
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.deviceList li {
+  display: grid;
+  gap: 0.15rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(137, 184, 229, 0.12);
+}
+
+.deviceList span {
+  color: #b7c9dc;
+  font-size: 0.94rem;
+}
+
+.steps {
+  display: grid;
+  gap: 0.75rem;
+  padding-left: 1.1rem;
+  color: #d9e7f5;
+}
+
+@media (max-width: 640px) {
+  .page {
+    width: min(100vw - 1rem, 40rem);
+    padding-top: 2rem;
+  }
+
+  .card {
+    padding: 1.1rem;
+  }
+
+  .checklist li {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
