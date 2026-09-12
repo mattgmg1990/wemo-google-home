@@ -3,15 +3,20 @@ import { appSecret } from "@/lib/env";
 
 type TokenKind = "auth_code" | "access_token" | "refresh_token";
 
-export type TokenPayload = {
-  exp: number;
+type TokenDetails = {
   iat: number;
   iss: "wemo-google-home";
-  kind: TokenKind;
   redirectUri?: string;
   sub: string;
   username?: string;
 };
+
+export type TokenPayload = TokenDetails & (
+  | { kind: "refresh_token"; exp: number | null }
+  | { kind: "auth_code" | "access_token"; exp: number }
+);
+
+type TokenExtra = Partial<Pick<TokenDetails, "redirectUri" | "username">>;
 
 function encodeBase64Url(value: Buffer | string): string {
   return Buffer.from(value)
@@ -35,19 +40,34 @@ export function issueToken(
   kind: TokenKind,
   sub: string,
   expiresInSeconds: number,
-  extra: Partial<Omit<TokenPayload, "exp" | "iat" | "iss" | "kind" | "sub">> = {},
+  extra?: TokenExtra,
+): string;
+export function issueToken(
+  kind: "refresh_token",
+  sub: string,
+  expiresInSeconds: null,
+  extra?: TokenExtra,
+): string;
+export function issueToken(
+  kind: TokenKind,
+  sub: string,
+  expiresInSeconds: number | null,
+  extra: TokenExtra = {},
 ): string {
+  if (
+    expiresInSeconds === null
+      ? kind !== "refresh_token"
+      : !Number.isFinite(expiresInSeconds) || expiresInSeconds <= 0
+  ) {
+    throw new Error("Only refresh tokens may have no expiration; other lifetimes must be positive and finite.");
+  }
+
   const now = Math.floor(Date.now() / 1000);
-  const payload = encodeBase64Url(
-    JSON.stringify({
-      ...extra,
-      exp: now + expiresInSeconds,
-      iat: now,
-      iss: "wemo-google-home",
-      kind,
-      sub,
-    } satisfies TokenPayload),
-  );
+  const details: TokenDetails = { ...extra, iat: now, iss: "wemo-google-home", sub };
+  const tokenPayload: TokenPayload = expiresInSeconds === null
+    ? { ...details, kind: "refresh_token", exp: null }
+    : { ...details, kind, exp: now + expiresInSeconds };
+  const payload = encodeBase64Url(JSON.stringify(tokenPayload));
 
   return `${payload}.${sign(payload)}`;
 }
@@ -72,7 +92,17 @@ export function verifyToken(token: string, expectedKind: TokenKind): TokenPayloa
   try {
     const payload = JSON.parse(decodeBase64Url(payloadPart).toString("utf8")) as TokenPayload;
     const now = Math.floor(Date.now() / 1000);
-    if (payload.iss !== "wemo-google-home" || payload.kind !== expectedKind || payload.exp <= now) {
+    if (payload.iss !== "wemo-google-home" || payload.kind !== expectedKind) {
+      return null;
+    }
+
+    // Only newly issued refresh tokens explicitly opt out of expiration.
+    // Legacy refresh tokens keep their original expiry and cannot be revived.
+    if (
+      payload.exp === null
+        ? payload.kind !== "refresh_token"
+        : typeof payload.exp !== "number" || !Number.isFinite(payload.exp) || payload.exp <= now
+    ) {
       return null;
     }
 

@@ -66,7 +66,8 @@ export async function POST(request: NextRequest) {
     return noStoreJson({
       access_token: issueToken("access_token", code.sub, 3600),
       expires_in: 3600,
-      refresh_token: issueToken("refresh_token", code.sub, 60 * 60 * 24 * 180),
+      // Google Home keeps this credential for the lifetime of the account link.
+      refresh_token: issueToken("refresh_token", code.sub, null),
       token_type: "Bearer",
     });
   }
