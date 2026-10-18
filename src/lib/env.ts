@@ -1,5 +1,3 @@
-import { parseDeviceConfigJson } from "@/lib/device-config";
-
 const OPTIONAL_ENV = [
   "APP_URL",
   "APP_SECRET",
@@ -9,9 +7,8 @@ const OPTIONAL_ENV = [
   "GOOGLE_OAUTH_CLIENT_SECRET",
   "GOOGLE_REDIRECT_URI",
   "GOOGLE_AGENT_USER_ID",
-  "DEVICE_API_URL",
-  "DEVICE_API_TOKEN",
-  "DEVICE_CONFIG_JSON",
+  "PI_WEBHOOK_URL",
+  "PI_WEBHOOK_TOKEN",
 ] as const;
 
 const LOCAL_HOSTNAMES = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
@@ -31,9 +28,8 @@ export const FULFILLMENT_REQUIRED_ENV = [
   "GOOGLE_OAUTH_CLIENT_SECRET",
   "GOOGLE_REDIRECT_URI",
   "GOOGLE_AGENT_USER_ID",
-  "DEVICE_API_URL",
-  "DEVICE_API_TOKEN",
-  "DEVICE_CONFIG_JSON",
+  "PI_WEBHOOK_URL",
+  "PI_WEBHOOK_TOKEN",
 ] as const satisfies readonly (typeof OPTIONAL_ENV)[number][];
 
 export type EnvKey = (typeof OPTIONAL_ENV)[number];
@@ -85,20 +81,11 @@ function validateUrlEnv(
 }
 
 function validateEnv(name: EnvKey, value: string): string | undefined {
-  if (name === "DEVICE_CONFIG_JSON") {
-    try {
-      parseDeviceConfigJson(value);
-      return undefined;
-    } catch (error) {
-      return error instanceof Error ? error.message : "Invalid DEVICE_CONFIG_JSON.";
-    }
-  }
-
   if (name === "APP_URL" || name === "GOOGLE_REDIRECT_URI") {
     return validateUrlEnv(name, value, { allowLocalHttp: true });
   }
 
-  if (name === "DEVICE_API_URL") {
+  if (name === "PI_WEBHOOK_URL") {
     return validateUrlEnv(name, value, {
       allowLocalHttp: process.env.NODE_ENV !== "production",
     });
@@ -169,16 +156,12 @@ export function appSecret(): string {
   return requiredEnv("APP_SECRET");
 }
 
-export function deviceApiUrl(): string {
-  return requiredEnv("DEVICE_API_URL");
+export function piWebhookUrl(): string {
+  return requiredEnv("PI_WEBHOOK_URL");
 }
 
-export function deviceApiToken(): string {
-  return requiredEnv("DEVICE_API_TOKEN");
-}
-
-export function deviceConfigJson(): string {
-  return requiredEnv("DEVICE_CONFIG_JSON");
+export function piWebhookToken(): string {
+  return requiredEnv("PI_WEBHOOK_TOKEN");
 }
 
 export function requiredEnv(name: EnvKey): string {

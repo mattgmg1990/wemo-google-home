@@ -1,0 +1,3 @@
+# Restore only this worker's supervisor after an unexpected supervisor exit.
+# The disable flag lets a deliberate service stop stay stopped.
+* * * * * root test -e /etc/wemo-worker.disabled || /etc/init.d/wemo-worker start >/dev/null 2>&1
