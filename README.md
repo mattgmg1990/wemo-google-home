@@ -32,7 +32,12 @@ Online state requires a successful observation no older than 30 seconds, matchin
 state/state_value, and the Pi's online flag. Offline or uncertain devices return
 `online:false` without an invented on/off value. Duplicate identities fail closed.
 
-Health checks call the authenticated Pi health action with a 2-second timeout.
+Health checks call the authenticated Pi health action with a 5-second timeout.
+Cold HTTPS connections through Tailscale Funnel can take more than two seconds
+even while all lights are reachable, so health gets a separate, longer transport
+budget. It still makes only one request and fails closed on timeout or unhealthy
+worker/device status. Server diagnostics record a fixed failure category, elapsed
+time and health booleans; the public response remains aggregate status only.
 Concurrent checks share a request; both success and failure cache for 30 seconds.
 The endpoint reports healthy only when the Pi reports a healthy worker, registry,
 and devices. It does not trigger network scans or device commands. The Pi worker
