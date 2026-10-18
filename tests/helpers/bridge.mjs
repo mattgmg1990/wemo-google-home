@@ -23,11 +23,12 @@ export function createBridge({ realAbort = false } = {}) {
   let now = startTime;
   const replies = [];
   const requests = [];
+  const logs = [];
   const context = vm.createContext({
     URLSearchParams, URL, Response,
     AbortSignal: realAbort ? AbortSignal : { timeout(ms) { return { timeoutMs: ms }; } },
     Date: class extends Date { static now() { return now; } },
-    console: { info() {}, warn() {}, error() {} },
+    console: { info() {}, warn(...args) { logs.push(args); }, error() {} },
     process: { env: { PI_WEBHOOK_URL: "https://pi.example.test/", PI_WEBHOOK_TOKEN: "test-only", GOOGLE_AGENT_USER_ID: "test-user" } },
     async fetch(url, options) {
       requests.push({ url, ...options, fields: Object.fromEntries(options.body) });
@@ -62,7 +63,7 @@ export function createBridge({ realAbort = false } = {}) {
   const pi = loadModule(path.join(repositoryRoot, "src/lib/pi.ts"));
   const health = loadModule(path.join(repositoryRoot, "src/app/api/health/route.ts"));
   return {
-    google, pi, health, requests,
+    google, pi, health, requests, logs,
     now: () => now,
     reply(payload, status = 200, elapsed = 0) { replies.push({ payload, status, elapsed }); },
     hangingReply() { replies.push({ hanging: true }); },

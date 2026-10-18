@@ -24,7 +24,7 @@ export const MAX_STATE_AGE_MS = 30_000;
 export const EXECUTE_BUDGET_MS = 7_000;
 const QUERY_TIMEOUT_MS = 2_500;
 const STATUS_CACHE_TTL_MS = 3_000;
-const HEALTH_TIMEOUT_MS = 2_000;
+const HEALTH_TIMEOUT_MS = 5_000;
 const HEALTH_CACHE_TTL_MS = 30_000;
 const CLOCK_SKEW_MS = 5_000;
 
@@ -113,12 +113,32 @@ export async function piIsHealthy(): Promise<boolean> {
   if (healthCache && Date.now() < healthCache.expiresAt) return healthCache.healthy;
   if (healthInFlight) return healthInFlight;
   healthInFlight = (async () => {
+    const startedAt = Date.now();
     let healthy = false;
+    let reason: "timeout" | "request_failed" | "pi_unhealthy" = "request_failed";
+    let details: { healthy: boolean; workerHealthy: boolean; registryHealthy: boolean } | undefined;
     try {
       const payload = await callPi({ action: "health", deadline: Date.now() + HEALTH_TIMEOUT_MS });
-      healthy = payload.health?.healthy === true && payload.health.workerHealthy === true
-        && payload.health.registryHealthy === true;
-    } catch { /* The public endpoint deliberately exposes no error details. */ }
+      const status = payload.health;
+      if (typeof status?.healthy === "boolean" && typeof status.workerHealthy === "boolean"
+        && typeof status.registryHealthy === "boolean") {
+        details = { healthy: status.healthy, workerHealthy: status.workerHealthy,
+          registryHealthy: status.registryHealthy };
+        healthy = status.healthy && status.workerHealthy && status.registryHealthy;
+        reason = "pi_unhealthy";
+      }
+    } catch (error) {
+      const failure = error as { name?: unknown; message?: unknown } | null;
+      if (failure?.name === "TimeoutError" || failure?.name === "AbortError"
+        || failure?.message === "Pi request deadline exceeded.") reason = "timeout";
+    }
+    if (!healthy) {
+      // Only fixed categories, duration and explicitly selected booleans are
+      // logged. Never copy Pi error text, URLs, identities or credentials.
+      console.warn("[health] Pi check failed", {
+        reason, durationMs: Date.now() - startedAt, ...details,
+      });
+    }
     healthCache = { healthy, expiresAt: Date.now() + HEALTH_CACHE_TTL_MS };
     return healthy;
   })();
