@@ -25,6 +25,9 @@ export function createOAuth() {
       GOOGLE_OAUTH_CLIENT_ID: "test-client",
       GOOGLE_OAUTH_CLIENT_SECRET: "test-client-secret",
       GOOGLE_REDIRECT_URI: redirectUri,
+      GOOGLE_AGENT_USER_ID: "test-user",
+      PI_WEBHOOK_URL: "https://pi.example.test/remote.php",
+      PI_WEBHOOK_TOKEN: "pi-test-only",
     } },
   });
   const modules = new Map();
@@ -45,9 +48,26 @@ export function createOAuth() {
   }
   const tokens = loadModule(path.join(repositoryRoot, "src/lib/tokens.ts"));
   const endpoint = loadModule(path.join(repositoryRoot, "src/app/api/oauth/token/route.ts"));
+  const authorization = loadModule(path.join(repositoryRoot, "src/app/oauth/authorize/complete/route.ts"));
+  const fulfillment = loadModule(path.join(repositoryRoot, "src/app/api/google/fulfillment/route.ts"));
   return {
     tokens,
+    env: context.process.env,
     advanceTime(milliseconds) { now += milliseconds; },
+    async authorize(fields = {}) {
+      return authorization.POST(new Request("https://bridge.example.test/oauth/authorize/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "x-forwarded-for": "192.0.2.1", "user-agent": "regression-fixture" },
+        body: new URLSearchParams({ client_id: "test-client", redirect_uri: redirectUri,
+          response_type: "code", username: "test-user", password: "test-password", ...fields }),
+      }));
+    },
+    async fulfill(token) {
+      return fulfillment.POST(new Request("https://bridge.example.test/api/google/fulfillment", {
+        method: "POST", headers: { "Content-Type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ requestId: "security-test", inputs: [{ intent: "action.devices.SYNC" }] }),
+      }));
+    },
     signedPayload(overrides = {}, rawPayload) {
       const payload = Buffer.from(rawPayload ?? JSON.stringify({
         exp: Math.floor(now / 1000) + 3600,

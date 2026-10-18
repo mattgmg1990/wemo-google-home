@@ -1,6 +1,5 @@
-import { configuredDevices, type BridgeDevice } from "@/lib/bridge-devices";
-import { getLocalDevices, type LocalApiDevice, setLocalDevice } from "@/lib/device-api";
 import { googleAgentUserId } from "@/lib/env";
+import { deviceIsFresh, EXECUTE_BUDGET_MS, getPiDevices, PiDevice, setPiDevice } from "@/lib/pi";
 
 type IntentRequest = {
   inputs?: Array<{
@@ -29,36 +28,44 @@ type IntentRequest = {
 type DeviceStatePayload = Record<
   string,
   {
-    on: boolean;
+    on?: boolean;
     online: boolean;
   }
 >;
 
-type KnownDeviceState = {
-  online: boolean;
-  on: boolean;
-  updatedAt: number;
+type WemoGoogleDevice = {
+  defaultNames: string[];
+  googleId: string;
+  serial: string;
+  name: string;
+  nicknames: string[];
 };
 
-type DeviceCatalog = {
-  deviceById: Map<string, BridgeDevice>;
-  deviceByLocalId: Map<string, BridgeDevice>;
-  devices: BridgeDevice[];
-};
+const googleDevices: WemoGoogleDevice[] = [
+  {
+    defaultNames: ["Light Behind the Couch"],
+    googleId: "wemo-light-behind-the-couch",
+    serial: "221734K0103D82",
+    name: "Light Behind the Couch",
+    nicknames: ["Couch Light"],
+  },
+  {
+    defaultNames: ["Small Red Light"],
+    googleId: "wemo-small-red-light",
+    serial: "221741K01064DC",
+    name: "Small Red Light",
+    nicknames: ["Red Light"],
+  },
+  {
+    defaultNames: ["Light Behind the Chair"],
+    googleId: "wemo-light-behind-the-chair",
+    serial: "221633K0101A1F",
+    name: "Light Behind the Chair",
+    nicknames: ["Chair Light"],
+  },
+] as const;
 
-let lastKnownStates: Record<string, KnownDeviceState> = {};
-let backgroundRefreshInFlight = false;
-
-function deviceCatalog(): DeviceCatalog {
-  const devices = configuredDevices();
-
-  return {
-    deviceById: new Map(devices.map((device) => [device.id, device])),
-    deviceByLocalId: new Map(devices.map((device) => [device.localId, device])),
-    devices,
-  };
-}
-
+const deviceById = new Map(googleDevices.map((device) => [device.googleId, device]));
 function executionsForCommand(
   command:
     | {
@@ -80,30 +87,8 @@ function executionsForCommand(
   return command?.execution ?? command?.executions ?? [];
 }
 
-function rememberDeviceState(googleId: string, on: boolean, online: boolean) {
-  lastKnownStates = {
-    ...lastKnownStates,
-    [googleId]: {
-      on,
-      online,
-      updatedAt: Date.now(),
-    },
-  };
-}
-
-function rememberStatesFromLocalDevices(devices: LocalApiDevice[], catalog: DeviceCatalog) {
-  for (const device of devices) {
-    const bridgeDevice = catalog.deviceByLocalId.get(device.id);
-    if (!bridgeDevice) {
-      continue;
-    }
-
-    rememberDeviceState(bridgeDevice.id, device.state === "on", device.online ?? true);
-  }
-}
-
-function allKnownDeviceIds(catalog: DeviceCatalog) {
-  return catalog.devices.map((device) => device.id);
+function allKnownDeviceIds() {
+  return googleDevices.map((device) => device.googleId);
 }
 
 function requestedQueryDeviceIds(request: IntentRequest): string[] {
@@ -114,18 +99,8 @@ function requestedQueryDeviceIds(request: IntentRequest): string[] {
   );
 }
 
-function requestedExecutionDeviceIds(request: IntentRequest): string[] {
-  return (
-    request.inputs?.flatMap((input) =>
-      input.payload?.commands?.flatMap((command) =>
-        command.devices?.flatMap((device) => (device.id ? [device.id] : [])) ?? [],
-      ) ?? [],
-    ) ?? []
-  );
-}
-
-function fallbackDeviceIds(deviceIds: string[], catalog: DeviceCatalog): string[] {
-  return deviceIds.length > 0 ? deviceIds : allKnownDeviceIds(catalog);
+function fallbackDeviceIds(deviceIds: string[]): string[] {
+  return deviceIds.length > 0 ? deviceIds : allKnownDeviceIds();
 }
 
 function requestedOnState(request: IntentRequest): boolean | null {
@@ -173,207 +148,123 @@ function requestedOnState(request: IntentRequest): boolean | null {
   return null;
 }
 
-function deviceStatePayload(deviceIds: string[]): DeviceStatePayload {
-  return Object.fromEntries(
-    deviceIds.map((deviceId) => {
-      const state = lastKnownStates[deviceId] ?? {
-        on: false,
-        online: false,
-      };
-
-      return [
-        deviceId,
-        {
-          on: state.on,
-          online: state.online,
-        },
-      ];
-    }),
-  );
-}
-
-function refreshDeviceStatesInBackground() {
-  if (backgroundRefreshInFlight) {
-    return;
-  }
-
-  backgroundRefreshInFlight = true;
-  void getLocalDevices()
-    .then((devices) => {
-      rememberStatesFromLocalDevices(devices, deviceCatalog());
-    })
-    .catch((error) => {
-      console.warn("[fulfillment] background refresh failed", {
-        error: error instanceof Error ? error.message : "unknown error",
-      });
-    })
-    .finally(() => {
-      backgroundRefreshInFlight = false;
-    });
-}
-
-function missingKnownState(deviceIds: string[]) {
-  return deviceIds.some((deviceId) => lastKnownStates[deviceId] == null);
+function deviceStatePayload(deviceIds: string[], devices: PiDevice[]): DeviceStatePayload {
+  return Object.fromEntries(deviceIds.map((deviceId) => {
+    const known = deviceById.get(deviceId);
+    // Duplicate serials and disagreement between the two identity fields fail closed.
+    const matches = known ? devices.filter((device) => device.id === known.serial || device.serial === known.serial) : [];
+    const match = matches.length === 1 ? matches[0] : undefined;
+    const online = match != null && match.id === known?.serial && match.serial === known?.serial && deviceIsFresh(match);
+    return [deviceId, online ? { on: match.state === "on", online: true } : { online: false }];
+  }));
 }
 
 export function syncPayload(requestId: string) {
-  const catalog = deviceCatalog();
-
   return {
     requestId,
     payload: {
       agentUserId: googleAgentUserId(),
-      devices: catalog.devices.map((device) => ({
-        id: device.id,
-        type: device.type,
+      devices: googleDevices.map((device) => ({
+        id: device.googleId,
+        type: "action.devices.types.LIGHT",
         traits: ["action.devices.traits.OnOff"],
         name: {
-          defaultNames: [device.name],
+          defaultNames: device.defaultNames,
           name: device.name,
           nicknames: device.nicknames,
         },
         willReportState: false,
         attributes: {},
         deviceInfo: {
-          manufacturer: "Self-hosted bridge",
-          model: "WeMo bridge",
+          manufacturer: "Belkin / Raspberry Pi bridge",
+          model: "Legacy WeMo bridge",
         },
-        ...(device.roomHint ? { roomHint: device.roomHint } : {}),
       })),
     },
   };
 }
 
 export async function queryPayload(request: IntentRequest) {
-  const catalog = deviceCatalog();
   const requestId = request.requestId ?? "";
-  const responseDeviceIds = fallbackDeviceIds(requestedQueryDeviceIds(request), catalog);
-
-  if (!missingKnownState(responseDeviceIds)) {
-    refreshDeviceStatesInBackground();
-
-    return {
-      requestId,
-      payload: {
-        devices: deviceStatePayload(responseDeviceIds),
-      },
-    };
-  }
-
+  const ids = fallbackDeviceIds(requestedQueryDeviceIds(request));
   try {
-    const devices = await getLocalDevices();
-    rememberStatesFromLocalDevices(devices, catalog);
-
-    return {
-      requestId,
-      payload: {
-        devices: deviceStatePayload(responseDeviceIds),
-      },
-    };
-  } catch (error) {
-    console.error("[fulfillment] query failed", {
-      deviceCount: responseDeviceIds.length,
-      error: error instanceof Error ? error.message : "unknown error",
-      requestId,
-    });
-
-    return {
-      requestId,
-      payload: {
-        devices: deviceStatePayload(responseDeviceIds),
-      },
-    };
+    const devices = await getPiDevices();
+    return { requestId, payload: { devices: deviceStatePayload(ids, devices) } };
+  } catch {
+    // A previous observation cannot establish reachability after the Pi fails.
+    return { requestId, payload: { devices: deviceStatePayload(ids, []) } };
   }
 }
 
 export async function executePayload(request: IntentRequest) {
-  const catalog = deviceCatalog();
+  const deadline = Date.now() + EXECUTE_BUDGET_MS;
   const requestId = request.requestId ?? "";
-  const responseDeviceIds = fallbackDeviceIds(requestedExecutionDeviceIds(request), catalog);
-  const desiredState = requestedOnState(request);
-  const targetDevices = responseDeviceIds
-    .map((deviceId) => catalog.deviceById.get(deviceId))
-    .filter((device): device is BridgeDevice => device != null);
-
-  if (desiredState === null) {
-    console.warn("[fulfillment] execute rejected: unsupported command", { requestId });
-    return {
-      requestId,
-      payload: {
-        commands: [
-          {
-            ids: responseDeviceIds,
-            status: "ERROR",
-            errorCode: "functionNotSupported",
-          },
-        ],
-      },
-    };
-  }
-
-  if (targetDevices.length !== responseDeviceIds.length) {
-    console.warn("[fulfillment] execute rejected: unknown device id", {
-      deviceCount: responseDeviceIds.length,
-      requestId,
-    });
-    return {
-      requestId,
-      payload: {
-        commands: [
-          {
-            ids: responseDeviceIds,
-            status: "ERROR",
-            errorCode: "deviceNotFound",
-          },
-        ],
-      },
-    };
-  }
-
-  try {
-    const updatedDevices = await Promise.all(
-      targetDevices.map((device) => setLocalDevice(device.localId, desiredState ? "on" : "off")),
+  const commands = request.inputs?.flatMap((input) => input.payload?.commands ?? []) ?? [];
+  // Keep each command's intent attached to its targets. Commands for the same
+  // light run in order; independent lights can complete concurrently.
+  const operationsByDevice = new Map<string, Array<boolean | null>>();
+  for (const command of commands) {
+    // EXECUTE must name its targets; a malformed command must never expand a
+    // neighboring command to every light in the catalog.
+    const ids = command.devices?.flatMap((device) => device.id ? [device.id] : []) ?? [];
+    const executions = executionsForCommand(command);
+    const desiredStates = executions.length === 0 ? [null] : executions.map((execution) =>
+      requestedOnState({ inputs: [{ payload: { commands: [{ execution: [execution] }] } }] }),
     );
-    rememberStatesFromLocalDevices(updatedDevices, catalog);
+    for (const deviceId of new Set(ids)) {
+      const operations = operationsByDevice.get(deviceId) ?? [];
+      operations.push(...desiredStates);
+      operationsByDevice.set(deviceId, operations);
+    }
+  }
+  if (operationsByDevice.size === 0) {
+    return { requestId, payload: { errorCode: "protocolError" } };
+  }
 
-    return {
-      requestId,
-      payload: {
-        commands: [
-          {
-            ids: responseDeviceIds,
-            status: "SUCCESS",
-            states: {
-              on: desiredState,
-              online: true,
-            },
-          },
-        ],
-      },
-    };
-  } catch (error) {
-    for (const device of targetDevices) {
-      rememberDeviceState(device.id, desiredState, false);
+  console.info("[fulfillment] execute request", {
+    requestId,
+    commands: commands.map((command) => ({
+      deviceIds: command.devices?.map((device) => device.id ?? "<missing-id>") ?? [],
+      executions: executionsForCommand(command).map((execution) => ({
+        command: execution.command ?? "<missing-command>",
+        on: execution.params?.on,
+      })),
+    })),
+    responseDeviceIds: [...operationsByDevice.keys()],
+  });
+
+  // Every task catches its own failure, so Promise.all waits for all lights and
+  // an absent light cannot turn a confirmed success into a group-wide failure.
+  const results = await Promise.all([...operationsByDevice].map(async ([deviceId, operations]) => {
+    const device = deviceById.get(deviceId);
+    if (!device) {
+      return { ids: [deviceId], status: "ERROR", errorCode: "deviceNotFound" };
+    }
+    if (operations.some((on) => on === null)) {
+      return { ids: [deviceId], status: "ERROR", errorCode: "functionNotSupported" };
     }
 
-    console.error("[fulfillment] execute failed", {
-      deviceCount: responseDeviceIds.length,
-      desiredState,
-      error: error instanceof Error ? error.message : "unknown error",
-      requestId,
-    });
+    try {
+      let updatedDevice: PiDevice | undefined;
+      for (const desiredState of operations) {
+        updatedDevice = await setPiDevice(device.serial, desiredState ? "on" : "off", deadline);
+      }
+      const confirmedOn = updatedDevice?.state === "on";
+      console.info("[fulfillment] execute result", { requestId, deviceId, on: confirmedOn });
+      return {
+        ids: [deviceId],
+        status: "SUCCESS",
+        states: { on: confirmedOn, online: true },
+      };
+    } catch (error) {
+      console.error("[fulfillment] execute failed", {
+        requestId,
+        deviceId,
+        error: error instanceof Error ? error.message : "unknown error",
+      });
+      return { ids: [deviceId], status: "ERROR", errorCode: "deviceOffline" };
+    }
+  }));
 
-    return {
-      requestId,
-      payload: {
-        commands: [
-          {
-            ids: responseDeviceIds,
-            status: "ERROR",
-            errorCode: "deviceOffline",
-          },
-        ],
-      },
-    };
-  }
+  return { requestId, payload: { commands: results } };
 }

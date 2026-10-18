@@ -1,0 +1,36 @@
+name: Validate bridge
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  cloud:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+      - run: npx tsc --noEmit
+      - run: node --test ops/check-health.test.mjs
+  pi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax and isolated registry/transport fixtures
+        run: |
+          php -l pi/lib.php
+          php -l pi/remote.php
+          php -l pi/worker.php
+          php pi/tests/regression.php
+      - name: Installer and supervisor fixtures
+        run: |
+          python3 ops/test_ops.py
+          sh -n ops/init-wemo-worker
