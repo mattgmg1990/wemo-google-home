@@ -26,16 +26,22 @@ plug run in order; different plugs run concurrently. All operations share a
 7-second deadline. The Pi owns its bounded local retry. Success requires a fresh
 reply for the requested serial and the requested on/off state.
 
-QUERY reads the Pi worker's stored observations. Cloud inventory caching lasts at
-most 3 seconds and never falls back to an expired snapshot when the Pi fails.
+QUERY reads the Pi worker's stored observations with one request and a 5-second
+transport deadline. This allows measured cold Funnel connections of 2-3 seconds
+while leaving time within Google's [9-second fulfillment timeout](https://developers.home.google.com/cloud-to-cloud/analytics/troubleshooting).
+Successful requests return immediately; the deadline adds no delay to the fast
+path. There is no cloud retry. Concurrent queries share the request, and server
+diagnostics log only a fixed failure category and elapsed time on failure.
+Cloud inventory caching lasts at most 3 seconds and never falls back to an
+expired snapshot when the Pi fails.
 Online state requires a successful observation no older than 30 seconds, matching
 state/state_value, and the Pi's online flag. Offline or uncertain devices return
 `online:false` without an invented on/off value. Duplicate identities fail closed.
 
 Health checks call the authenticated Pi health action with a 5-second timeout.
 Cold HTTPS connections through Tailscale Funnel can take more than two seconds
-even while all lights are reachable, so health gets a separate, longer transport
-budget. It still makes only one request and fails closed on timeout or unhealthy
+even while all lights are reachable. Health has its own request and budget,
+makes only one request and fails closed on timeout or unhealthy
 worker/device status. Server diagnostics record a fixed failure category, elapsed
 time and health booleans; the public response remains aggregate status only.
 Concurrent checks share a request; both success and failure cache for 30 seconds.

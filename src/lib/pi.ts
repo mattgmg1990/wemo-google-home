@@ -22,7 +22,7 @@ type PiResponse = {
 
 export const MAX_STATE_AGE_MS = 30_000;
 export const EXECUTE_BUDGET_MS = 7_000;
-const QUERY_TIMEOUT_MS = 2_500;
+const QUERY_TIMEOUT_MS = 5_000;
 const STATUS_CACHE_TTL_MS = 3_000;
 const HEALTH_TIMEOUT_MS = 5_000;
 const HEALTH_CACHE_TTL_MS = 30_000;
@@ -32,6 +32,12 @@ let statusCache: { devices: PiDevice[]; expiresAt: number } | null = null;
 let statusInFlight: Promise<PiDevice[]> | null = null;
 let healthCache: { healthy: boolean; expiresAt: number } | null = null;
 let healthInFlight: Promise<boolean> | null = null;
+
+function requestFailureReason(error: unknown): "timeout" | "request_failed" {
+  const failure = error as { name?: unknown; message?: unknown } | null;
+  return failure?.name === "TimeoutError" || failure?.name === "AbortError"
+    || failure?.message === "Pi request deadline exceeded." ? "timeout" : "request_failed";
+}
 
 export function deviceIsFresh(device: PiDevice): boolean {
   return typeof device.observedAt === "number" && Number.isFinite(device.observedAt)
@@ -78,11 +84,20 @@ export async function getPiDevices(): Promise<PiDevice[]> {
   if (statusCache && Date.now() < statusCache.expiresAt) return statusCache.devices;
   if (statusInFlight) return statusInFlight;
   statusInFlight = (async () => {
-    const payload = await callPi({ action: "status", deadline: Date.now() + QUERY_TIMEOUT_MS });
-    if (!Array.isArray(payload.devices)) throw new Error("Pi returned no device inventory.");
-    const devices = payload.devices.filter((device) => device != null && typeof device === "object");
-    statusCache = { devices, expiresAt: Date.now() + STATUS_CACHE_TTL_MS };
-    return devices;
+    const startedAt = Date.now();
+    try {
+      const payload = await callPi({ action: "status", deadline: startedAt + QUERY_TIMEOUT_MS });
+      if (!Array.isArray(payload.devices)) throw new Error("Pi returned no device inventory.");
+      const devices = payload.devices.filter((device) => device != null && typeof device === "object");
+      statusCache = { devices, expiresAt: Date.now() + STATUS_CACHE_TTL_MS };
+      return devices;
+    } catch (error) {
+      // Log once for the shared request, without copying private error details.
+      console.warn("[query] Pi status check failed", {
+        reason: requestFailureReason(error), durationMs: Date.now() - startedAt,
+      });
+      throw error;
+    }
   })();
   try { return await statusInFlight; }
   finally { statusInFlight = null; }
@@ -128,9 +143,7 @@ export async function piIsHealthy(): Promise<boolean> {
         reason = "pi_unhealthy";
       }
     } catch (error) {
-      const failure = error as { name?: unknown; message?: unknown } | null;
-      if (failure?.name === "TimeoutError" || failure?.name === "AbortError"
-        || failure?.message === "Pi request deadline exceeded.") reason = "timeout";
+      reason = requestFailureReason(error);
     }
     if (!healthy) {
       // Only fixed categories, duration and explicitly selected booleans are

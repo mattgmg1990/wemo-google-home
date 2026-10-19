@@ -33,7 +33,8 @@ export function createBridge({ realAbort = false } = {}) {
     async fetch(url, options) {
       requests.push({ url, ...options, fields: Object.fromEntries(options.body) });
       if (replies.length === 0) throw new Error("Unexpected HTTP request");
-      const { payload, status, elapsed, gate, hanging } = replies.shift();
+      const { payload, status, elapsed, gate, hanging, error } = replies.shift();
+      if (error) throw error;
       if (hanging) return await new Promise((_, reject) => {
         options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
       });
@@ -66,6 +67,7 @@ export function createBridge({ realAbort = false } = {}) {
     google, pi, health, requests, logs,
     now: () => now,
     reply(payload, status = 200, elapsed = 0) { replies.push({ payload, status, elapsed }); },
+    rejectedReply(error) { replies.push({ error }); },
     hangingReply() { replies.push({ hanging: true }); },
     deferredReply(payload, status = 200) {
       let release;
