@@ -26,6 +26,15 @@ plug run in order; different plugs run concurrently. All operations share a
 7-second deadline. The Pi owns its bounded local retry. Success requires a fresh
 reply for the requested serial and the requested on/off state.
 
+Pi requests use a dedicated HTTP client with HTTP/2 enabled. After one TLS
+handshake, independent light commands share the connection as concurrent streams.
+When the endpoint negotiates HTTP/1.1 instead, up to three connections preserve
+independent progress. This reduces repeated TLS work on the Pi without changing
+its API, state validation, or command deadline. TLS certificate checks remain
+enabled, redirects remain rejected, and no application retry interceptor or
+background HTTP/2 ping is configured. An idle or new Vercel instance may still need a TLS handshake;
+connection reuse is an optimization, not an availability guarantee.
+
 QUERY reads the Pi worker's stored observations with one request and a 5-second
 transport deadline. This allows measured cold Funnel connections of 2-3 seconds
 while leaving time within Google's [9-second fulfillment timeout](https://developers.home.google.com/cloud-to-cloud/analytics/troubleshooting).
@@ -74,6 +83,7 @@ clock-skew tolerance allows small differences between the Pi and cloud clocks.
 
 Use `.env.example` as a template. Keep production credentials in Vercel environment
 variables and the Pi's existing protected configuration. Do not commit them.
+Use Node.js 24; the pinned HTTP client requires Node.js 22.19 or newer.
 
 Required settings are `APP_URL`, `APP_SECRET`, `APP_LOGIN_USERNAME`,
 `APP_LOGIN_PASSWORD`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
