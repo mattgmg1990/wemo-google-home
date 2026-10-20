@@ -1,4 +1,5 @@
 import { piWebhookToken, piWebhookUrl } from "@/lib/env";
+import { piFetch } from "@/lib/pi-transport";
 
 export type PiDevice = {
   id: string;
@@ -58,7 +59,7 @@ async function callPi({ action, serial, deadline }: {
   if (remaining <= 0) throw new Error("Pi request deadline exceeded.");
   const body = new URLSearchParams({ action });
   if (serial) body.set("device_id", serial);
-  const response = await fetch(piWebhookUrl(), {
+  const response = await piFetch(piWebhookUrl(), {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",

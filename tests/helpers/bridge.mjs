@@ -53,6 +53,7 @@ export function createBridge({ realAbort = false } = {}) {
       fileName: filename,
     });
     function require(specifier) {
+      if (specifier === "@/lib/pi-transport") return { piFetch: context.fetch };
       if (!specifier.startsWith("@/")) throw new Error(`Unexpected module ${specifier}`);
       return loadModule(path.join(repositoryRoot, "src", `${specifier.slice(2)}.ts`));
     }
